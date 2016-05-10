@@ -3,6 +3,7 @@ package com.im.resources;
 import com.im.beans.JVM;
 import com.im.services.JVMService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.hateoas.EntityLinks;
 import org.springframework.hateoas.ExposesResourceFor;
 import org.springframework.hateoas.Resources;
 import org.springframework.http.HttpEntity;
@@ -21,10 +22,12 @@ import java.util.List;
 public class JVMResource {
 
     @Autowired private JVMService jvmService;
+    @Autowired private EntityLinks entityLinks;
 
     @RequestMapping(method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
     HttpEntity<Resources<List<JVM>>> getAllJVMs() {
-        //resources.add(this.entityLinks.linkToCollectionResource(JVM.class));
-        return new ResponseEntity<>(new Resources(jvmService.getAllJVMs()), HttpStatus.OK);
+        Resources<List<JVM>> resources = new Resources(jvmService.getAllJVMs());
+        resources.add(this.entityLinks.linkToCollectionResource(JVM.class));
+        return new ResponseEntity<>(resources, HttpStatus.OK);
     }
 }
