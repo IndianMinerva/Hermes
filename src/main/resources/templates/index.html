@@ -6,8 +6,16 @@
     <script src="js/libs/handlebars-v1.3.0.js"></script>
     <script src="js/libs/ember.js"></script>
     <script src="js/libs/ember-data.js"></script>
+    <script src="js/app.js"></script>
 </head>
 <body>
-    <H1>Hello World!!</H1>
+    <script type="text/x-handlebars">
+        Hello world
+        {{outlet}}
+    </script>
+
+    <script type="text/x-handlebars" id="about">
+        About page bro!!
+    </script>
 </body>
 </html>
