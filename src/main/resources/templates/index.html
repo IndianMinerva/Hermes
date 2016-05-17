@@ -14,7 +14,16 @@
         {{outlet}}
     </script>
 
-    <script type="text/x-handlebars" id="about">
+    <script type="text/x-handlebars" id="jvms">
+        <table>
+            {{model}}
+            {{#each process in model}}
+                <tr>
+                    <td>{{process.id}}</td>
+                    <td>{{process.name}}</td>
+                </tr>
+            {{/each}}
+        </table>
         About page bro!!
     </script>
 </body>
