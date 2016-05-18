@@ -12,8 +12,10 @@ App.IndexRoute = Ember.Route.extend({
 App.JvmsRoute = Ember.Route.extend({
     model: function() {
         var self = this;
-        $.get('/jvms', function(data) {
-            return data._embedded.jVMList;
+        var arr = [];
+        $.get('/jvms').done(function(data) {
+            arr = data._embedded.jVMList;
         });
+        return arr;
     }
-})
+});
