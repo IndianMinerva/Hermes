@@ -1,5 +1,7 @@
 package com.im;
 
+import com.sun.tools.attach.AgentInitializationException;
+import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.VirtualMachine;
 import org.springframework.stereotype.Component;
 
@@ -8,7 +10,7 @@ import java.util.Properties;
 
 @Component
 public class JvmUtils {
-    public String getJmxUrl(VirtualMachine virtualMachine) throws Exception {
+    public String getJmxUrl(VirtualMachine virtualMachine) throws IOException, AgentLoadException, AgentInitializationException {
         String jmxUrl = readAgentProperty(virtualMachine, "com.sun.management.jmxremote.localConnectorAddress");
         if (jmxUrl == null) {
             loadMangementAgent(virtualMachine);
@@ -17,7 +19,7 @@ public class JvmUtils {
         return jmxUrl;
     }
 
-    private void loadMangementAgent(VirtualMachine virtualMachine) throws Exception {
+    private void loadMangementAgent(VirtualMachine virtualMachine) throws IOException, AgentLoadException, AgentInitializationException {
         final String id = virtualMachine.id();
         String agent = null;
         Boolean loaded = false;
