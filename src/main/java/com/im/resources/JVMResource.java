@@ -1,5 +1,6 @@
 package com.im.resources;
 
+import com.im.JvmUtils;
 import com.im.beans.JVM;
 import com.im.services.JVMService;
 import com.sun.tools.attach.AttachNotSupportedException;
@@ -17,14 +18,24 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
+import javax.management.MBeanServerConnection;
+import javax.management.ObjectName;
+import javax.management.remote.JMXConnector;
+import javax.management.remote.JMXConnectorFactory;
+import javax.management.remote.JMXServiceURL;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.util.List;
+import java.util.Set;
 
 @Controller
 @RequestMapping("/jvms")
 @ExposesResourceFor(JVM.class)
 public class JVMResource {
 
+    @Autowired private JvmUtils jvmUtils;
     @Autowired private JVMService jvmService;
     @Autowired private EntityLinks entityLinks;
 
@@ -35,9 +46,21 @@ public class JVMResource {
         return new ResponseEntity<>(resources, HttpStatus.OK);
     }
 
-    @RequestMapping(value = "{id}/stats", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
-    HttpEntity<Resources<List<JVM>>> getJVMStats(@PathVariable String id) throws AttachNotSupportedException, IOException {
+    @RequestMapping(value = "{id}/threads", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    HttpEntity<Resources<List<JVM>>> getThreadInfo(@PathVariable String id) throws AttachNotSupportedException, IOException, Exception {
         VirtualMachine vm = VirtualMachine.attach(id);
+        String jmxUrl = jvmUtils.getJmxUrl(vm);
+        JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(jmxUrl));
+        MBeanServerConnection mbsc = connector.getMBeanServerConnection();
+        Set<ObjectName> mbeans = mbsc.queryNames(new ObjectName(ManagementFactory.THREAD_MXBEAN_NAME), null);
+
+        for (ObjectName name : mbeans) {
+            ThreadMXBean threadBean = ManagementFactory.newPlatformMXBeanProxy(mbsc, name.toString(), ThreadMXBean.class);
+            for (long threadId : threadBean.getAllThreadIds()) {
+                ThreadInfo threadInfo = threadBean.getThreadInfo(threadId);
+                System.out.println(threadInfo.getLockOwnerName());
+            }
+        }
         return null;
     }
 }
