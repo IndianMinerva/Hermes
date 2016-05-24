@@ -7,7 +7,6 @@ import com.sun.tools.attach.VirtualMachine;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.hateoas.EntityLinks;
 import org.springframework.hateoas.ExposesResourceFor;
-import org.springframework.hateoas.Link;
 import org.springframework.hateoas.Resources;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpStatus;
@@ -19,12 +18,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
+import javax.management.MBeanServer;
 import javax.management.MBeanServerConnection;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import java.io.IOException;
+import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
@@ -92,7 +93,6 @@ public class JVMResource {
             MemoryMXBean memoryMXBean = ManagementFactory.newPlatformMXBeanProxy(mbsc, mbean.toString(), MemoryMXBean.class);
             memoryUsages.add(memoryMXBean.getHeapMemoryUsage());
             memoryUsages.add(memoryMXBean.getNonHeapMemoryUsage());
-            vm.detach();
         } catch (MalformedObjectNameException mone) {
             throw new IOException(mone);
         } catch (Exception e) {
@@ -116,7 +116,6 @@ public class JVMResource {
             ObjectName mbean = (ObjectName) mbsc.queryNames(new ObjectName(ManagementFactory.RUNTIME_MXBEAN_NAME), null).toArray()[0];
             RuntimeMXBean runtimeMXBean = ManagementFactory.newPlatformMXBeanProxy(mbsc, mbean.toString(), RuntimeMXBean.class);
             runtimeStats.add(runtimeMXBean);
-            vm.detach();
         } catch (MalformedObjectNameException mone) {
             throw new IOException(mone);
         } catch (Exception e) {
@@ -125,6 +124,31 @@ public class JVMResource {
             vm.detach();
         }
         return prepareResourcesAndReturn(new Resources(runtimeStats), "runtime", id);
+    }
+
+    @RequestMapping(value = "/{id}/gc", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    HttpEntity<Resources<List<GarbageCollectorMXBean>>> getGcInfo(@PathVariable String id) throws IOException {
+        VirtualMachine vm = null;
+        List<GarbageCollectorMXBean> garbageCollectorMXBeans = new ArrayList<>();
+
+        try {
+            vm = VirtualMachine.attach(id);
+            String jmxUrl = jvmUtils.getJmxUrl(vm);
+
+            MBeanServerConnection mbsc = JMXConnectorFactory.connect(new JMXServiceURL(jmxUrl)).getMBeanServerConnection();
+            ObjectName mbean = new ObjectName(ManagementFactory.GARBAGE_COLLECTOR_MXBEAN_DOMAIN_TYPE + ",*");
+            MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+
+            for (ObjectName name : server.queryNames(mbean, null)) {
+                GarbageCollectorMXBean garbageCollectorMXBean = ManagementFactory.newPlatformMXBeanProxy(mbsc, name.getCanonicalName(), GarbageCollectorMXBean.class);
+                garbageCollectorMXBeans.add(garbageCollectorMXBean);
+            }
+        } catch (Exception e) {
+            throw new IOException(e);
+        } finally {
+            vm.detach();
+        }
+        return prepareResourcesAndReturn(new Resources(garbageCollectorMXBeans), "gc", id);
     }
 
     private <T> HttpEntity<Resources<List<T>>> prepareResourcesAndReturn(Resources<List<T>> resources, String self, String id) throws IOException {
@@ -140,6 +164,7 @@ public class JVMResource {
         resources.add(linkTo(methodOn(JVMResource.class).getThreadInfo(idValue)).withRel("thread"));
         resources.add(linkTo(methodOn(JVMResource.class).getMemoryInfo(idValue)).withRel("memory"));
         resources.add(linkTo(methodOn(JVMResource.class).getRuntimeInfo(idValue)).withRel("runtime"));
+        resources.add(linkTo(methodOn(JVMResource.class).getRuntimeInfo(idValue)).withRel("gc"));
         return resources;
     }
 }
