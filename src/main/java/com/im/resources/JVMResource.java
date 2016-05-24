@@ -7,6 +7,7 @@ import com.sun.tools.attach.VirtualMachine;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.hateoas.EntityLinks;
 import org.springframework.hateoas.ExposesResourceFor;
+import org.springframework.hateoas.Link;
 import org.springframework.hateoas.Resources;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,7 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
+import java.lang.management.RuntimeMXBean;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
@@ -46,13 +48,14 @@ public class JVMResource {
 
     @RequestMapping(method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
     HttpEntity<Resources<List<JVM>>> getAllJVMs() throws IOException {
-        return prepareResourcesAndReturn(new Resources(jvmService.getAllJVMs()), null);
+        return prepareResourcesAndReturn(new Resources(jvmService.getAllJVMs()), "jvms", null);
     }
 
     @RequestMapping(value = "/{id}/thread", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
     HttpEntity<Resources<List<ThreadInfo>>> getThreadInfo(@PathVariable String id) throws IOException {
         VirtualMachine vm = null;
         List<ThreadInfo> threadInfos = new ArrayList<>();
+
         try {
             vm = VirtualMachine.attach(id);
             String jmxUrl = jvmUtils.getJmxUrl(vm);
@@ -71,7 +74,7 @@ public class JVMResource {
         } finally {
             vm.detach();
         }
-        return prepareResourcesAndReturn(new Resources(threadInfos), id);
+        return prepareResourcesAndReturn(new Resources(threadInfos), "thread", id);
     }
 
 
@@ -97,14 +100,46 @@ public class JVMResource {
         } finally {
             vm.detach();
         }
-        return prepareResourcesAndReturn(new Resources(memoryUsages), id);
+        return prepareResourcesAndReturn(new Resources(memoryUsages), "memory", id);
     }
 
-    private <T> HttpEntity<Resources<List<T>>> prepareResourcesAndReturn(Resources<List<T>> resources, String id) throws IOException {
-        String idValue = StringUtils.isEmpty(id) ? "id" : id;
-        resources.add(linkTo(methodOn(JVMResource.class).getAllJVMs()).withRel("jvms"));
-        resources.add(linkTo(methodOn(JVMResource.class).getThreadInfo(idValue)).withRel("threads"));
-        resources.add(linkTo(methodOn(JVMResource.class).getMemoryInfo(idValue)).withRel("memory"));
+    @RequestMapping(value = "/{id}/runtime", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    HttpEntity<Resources<MemoryUsage>> getRuntimeInfo(@PathVariable String id) throws IOException {
+        VirtualMachine vm = null;
+        List<RuntimeMXBean> runtimeStats = new ArrayList<>();
+
+        try {
+            vm = VirtualMachine.attach(id);
+            String jmxUrl = jvmUtils.getJmxUrl(vm);
+
+            MBeanServerConnection mbsc = JMXConnectorFactory.connect(new JMXServiceURL(jmxUrl)).getMBeanServerConnection();
+            ObjectName mbean = (ObjectName) mbsc.queryNames(new ObjectName(ManagementFactory.RUNTIME_MXBEAN_NAME), null).toArray()[0];
+            RuntimeMXBean runtimeMXBean = ManagementFactory.newPlatformMXBeanProxy(mbsc, mbean.toString(), RuntimeMXBean.class);
+            runtimeStats.add(runtimeMXBean);
+            vm.detach();
+        } catch (MalformedObjectNameException mone) {
+            throw new IOException(mone);
+        } catch (Exception e) {
+            throw new IOException(e);
+        } finally {
+            vm.detach();
+        }
+        return prepareResourcesAndReturn(new Resources(runtimeStats), "runtime", id);
+    }
+
+    private <T> HttpEntity<Resources<List<T>>> prepareResourcesAndReturn(Resources<List<T>> resources, String self, String id) throws IOException {
+        addLinks(resources, id);
+        resources.add(resources.getLink(self).withSelfRel());
+        resources.getLinks().remove(resources.getLink(self));
         return new ResponseEntity<>(resources, HttpStatus.OK);
+    }
+
+    private <T> Resources<List<T>> addLinks(Resources<List<T>> resources, String id) throws IOException {
+        String idValue = StringUtils.isEmpty(id) ? "<id>" : id;
+        resources.add(linkTo(methodOn(JVMResource.class).getAllJVMs()).withRel("jvms"));
+        resources.add(linkTo(methodOn(JVMResource.class).getThreadInfo(idValue)).withRel("thread"));
+        resources.add(linkTo(methodOn(JVMResource.class).getMemoryInfo(idValue)).withRel("memory"));
+        resources.add(linkTo(methodOn(JVMResource.class).getRuntimeInfo(idValue)).withRel("runtime"));
+        return resources;
     }
 }
