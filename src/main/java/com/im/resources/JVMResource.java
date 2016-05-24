@@ -21,15 +21,14 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import javax.management.MBeanServerConnection;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
-import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 @Controller
 @RequestMapping("/jvms")
@@ -47,33 +46,28 @@ public class JVMResource {
         return new ResponseEntity<>(resources, HttpStatus.OK);
     }
 
-    @RequestMapping(value = "{id}/threads", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
-    HttpEntity<Resources<List<JVM>>> getThreadInfo(@PathVariable String id) throws AttachNotSupportedException, IOException {
-        String jmxUrl;
-        Set<ObjectName> mbeans;
-
-        VirtualMachine vm = VirtualMachine.attach(id);
+    @RequestMapping(value = "/{id}/threads", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    HttpEntity<Resources<List<ThreadInfo>>> getThreadInfo(@PathVariable String id) throws AttachNotSupportedException, IOException {
+        List<ThreadInfo> threadInfos = new ArrayList<>();
         try {
-            jmxUrl = jvmUtils.getJmxUrl(vm);
+            VirtualMachine vm = VirtualMachine.attach(id);
+            String jmxUrl = jvmUtils.getJmxUrl(vm);
+
+            MBeanServerConnection mbsc = JMXConnectorFactory.connect(new JMXServiceURL(jmxUrl)).getMBeanServerConnection();
+            ObjectName mbean = (ObjectName) mbsc.queryNames(new ObjectName(ManagementFactory.THREAD_MXBEAN_NAME), null).toArray()[0];
+            ThreadMXBean threadBean = ManagementFactory.newPlatformMXBeanProxy(mbsc, mbean.toString(), ThreadMXBean.class);
+
+            for (long threadId : threadBean.getAllThreadIds()) {
+                threadInfos.add(threadBean.getThreadInfo(threadId));
+            }
+        } catch (MalformedObjectNameException mone) {
+            throw new IOException(mone);
         } catch (Exception e) {
             throw new IOException(e);
         }
 
-        MBeanServerConnection mbsc = JMXConnectorFactory.connect(new JMXServiceURL(jmxUrl)).getMBeanServerConnection();
-
-        try {
-            mbeans = mbsc.queryNames(new ObjectName(ManagementFactory.THREAD_MXBEAN_NAME), null);
-        } catch (MalformedObjectNameException mone) {
-            throw new IOException(mone);
-        }
-
-        for (ObjectName name : mbeans) {
-            ThreadMXBean threadBean = ManagementFactory.newPlatformMXBeanProxy(mbsc, name.toString(), ThreadMXBean.class);
-            for (long threadId : threadBean.getAllThreadIds()) {
-                ThreadInfo threadInfo = threadBean.getThreadInfo(threadId);
-                System.out.println(threadInfo.getLockOwnerName());
-            }
-        }
-        return null;
+        Resources<List<ThreadInfo>> resources = new Resources(threadInfos);
+        resources.add(this.entityLinks.linkToCollectionResource(JVM.class));
+        return new ResponseEntity<>(resources, HttpStatus.OK);
     }
 }
